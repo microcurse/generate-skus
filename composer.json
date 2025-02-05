@@ -1,0 +1,10 @@
+{
+    "name": "marc-maninang/sku-generator",
+    "description": "Generate SKUs for WooCommerce Product variations with Excel export functionality",
+    "type": "wordpress-plugin",
+    "license": "GPL-2.0-or-later",
+    "require": {
+        "php": ">=8.1",
+        "phpoffice/phpspreadsheet": "^1.29"
+    }
+}
