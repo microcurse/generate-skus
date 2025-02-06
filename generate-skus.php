@@ -6,7 +6,6 @@ Version: 1.0.0
 Author: Marc Maninang
 License: GPL2
 Text Domain: sku-generator
-Domain Path: /languages
 Requires at least: 5.0
 Requires PHP: 8.1
 WC requires at least: 7.0
