@@ -3,6 +3,23 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+// Helper function to match variation to combination
+function match_variation_to_combination($variation, $combination, $attribute_terms) {
+    foreach ($variation['attributes'] as $taxonomy => $variation_value_slug) {
+        $term = get_term_by('slug', $variation_value_slug, $taxonomy);
+        if (!$term) return false;
+
+        $taxonomy_keys = array_keys($attribute_terms);
+        $term_index = array_search($taxonomy, $taxonomy_keys);
+        if ($term_index === false) return false;
+
+        if (sanitize_title($combination[$term_index]) !== $variation_value_slug) {
+            return false;
+        }
+    }
+    return true;
+}
+
 function sku_generator_page_callback() {
     if (!isset($_GET['product_id'])) {
         wp_die('Product ID missing.');
@@ -23,14 +40,25 @@ function sku_generator_page_callback() {
 
     echo '<h1>SKU Combinations for Product: ' . esc_html($product->get_name()) . '</h1>';
 
-    // Generate the list of attribute combinations
-    $variations = [];
-    $attributes = $product->get_attributes();
+    // Get all variations first
+    $variations = $product->get_children();
+    $variation_data = [];
+    foreach ($variations as $variation_id) {
+        $variation = wc_get_product($variation_id);
+        if (!$variation) continue;
+        
+        $variation_data[] = [
+            'id' => $variation_id,
+            'sku' => $variation->get_sku(),
+            'attributes' => $variation->get_attributes()
+        ];
+    }
 
-    // Prepare the attributes for combination
+    // Get all attributes that have suffixes
+    $attributes = $product->get_attributes();
     $attribute_terms = [];
     $attribute_labels = [];
-    $attribute_slugs = [];
+    $attribute_suffixes = [];
     
     foreach ($attributes as $attribute_name => $attribute) {
         if (!$attribute->get_variation()) {
@@ -46,26 +74,35 @@ function sku_generator_page_callback() {
 
         if (!is_wp_error($terms) && !empty($terms)) {
             $attribute_terms[$taxonomy] = [];
-            $attribute_slugs[$taxonomy] = [];
+            $attribute_suffixes[$taxonomy] = [];
             
             foreach ($terms as $term) {
-                $attribute_terms[$taxonomy][] = $term->name;
-                $attribute_slugs[$taxonomy][] = sanitize_title($term->slug);
+                $suffix = get_term_meta($term->term_id, '_term_suffix', true);
+                if (!empty($suffix)) {
+                    $attribute_terms[$taxonomy][] = $term->name;
+                    $attribute_suffixes[$taxonomy][] = $suffix;
+                }
             }
             
-            $tax_object = get_taxonomy($taxonomy);
-            $attribute_labels[$taxonomy] = $tax_object ? $tax_object->labels->singular_name : wc_attribute_label($taxonomy);
+            // Only include attributes that have terms with suffixes
+            if (!empty($attribute_terms[$taxonomy])) {
+                $tax_object = get_taxonomy($taxonomy);
+                $attribute_labels[$taxonomy] = $tax_object ? $tax_object->labels->singular_name : wc_attribute_label($taxonomy);
+            } else {
+                unset($attribute_terms[$taxonomy]);
+                unset($attribute_suffixes[$taxonomy]);
+            }
         }
     }
 
     if (empty($attribute_terms)) {
-        echo '<p>No attributes are set for variations. Please edit the product and check "Used for variations" for the attributes you want to generate SKUs for.</p>';
+        echo '<p>No attributes with suffixes are set for variations. Please edit the product attributes and add suffixes to the terms you want to include in SKU generation.</p>';
         return;
     }
 
     // Generate combinations
     $combinations = SKU_Generator::generate_combinations($attribute_terms);
-    $slug_combinations = SKU_Generator::generate_combinations($attribute_slugs);
+    $suffix_combinations = SKU_Generator::generate_combinations($attribute_suffixes);
 
     // Add export form
     ?>
@@ -87,7 +124,17 @@ function sku_generator_page_callback() {
             $i++;
         }
         
-        $sku = strtoupper($product->get_sku() . '-' . implode('-', $slug_combinations[$index]));
+        // Find the matching variation
+        $variation_sku = '';
+        foreach ($variation_data as $variation) {
+            if (match_variation_to_combination($variation, $combination, $attribute_terms) && !empty($variation['sku'])) {
+                $variation_sku = $variation['sku'];
+                break;
+            }
+        }
+        
+        // Use variation SKU if available, otherwise use base SKU with suffixes
+        $sku = $variation_sku ?: strtoupper($product->get_sku() . '-' . implode('-', $suffix_combinations[$index]));
         
         echo '<tr><td>' . implode(' | ', $readable_combination) . '</td><td>' . esc_html($sku) . '</td></tr>';
     }
@@ -123,11 +170,25 @@ function export_skus_to_excel($product) {
         $sheet->setCellValue('B1', 'Generated SKU');
         $sheet->getStyle('A1:B1')->applyFromArray($headerStyle);
 
+        // Get all variations first
+        $variations = $product->get_children();
+        $variation_data = [];
+        foreach ($variations as $variation_id) {
+            $variation = wc_get_product($variation_id);
+            if (!$variation) continue;
+            
+            $variation_data[] = [
+                'id' => $variation_id,
+                'sku' => $variation->get_sku(),
+                'attributes' => $variation->get_attributes()
+            ];
+        }
+
         // Get the data
         $attributes = $product->get_attributes();
         $attribute_terms = [];
         $attribute_labels = [];
-        $attribute_slugs = [];
+        $attribute_suffixes = [];
         
         foreach ($attributes as $attribute_name => $attribute) {
             if (!$attribute->get_variation()) {
@@ -143,20 +204,29 @@ function export_skus_to_excel($product) {
 
             if (!is_wp_error($terms) && !empty($terms)) {
                 $attribute_terms[$taxonomy] = [];
-                $attribute_slugs[$taxonomy] = [];
+                $attribute_suffixes[$taxonomy] = [];
                 
                 foreach ($terms as $term) {
-                    $attribute_terms[$taxonomy][] = $term->name;
-                    $attribute_slugs[$taxonomy][] = sanitize_title($term->slug);
+                    $suffix = get_term_meta($term->term_id, '_term_suffix', true);
+                    if (!empty($suffix)) {
+                        $attribute_terms[$taxonomy][] = $term->name;
+                        $attribute_suffixes[$taxonomy][] = $suffix;
+                    }
                 }
                 
-                $tax_object = get_taxonomy($taxonomy);
-                $attribute_labels[$taxonomy] = $tax_object ? $tax_object->labels->singular_name : wc_attribute_label($taxonomy);
+                // Only include attributes that have terms with suffixes
+                if (!empty($attribute_terms[$taxonomy])) {
+                    $tax_object = get_taxonomy($taxonomy);
+                    $attribute_labels[$taxonomy] = $tax_object ? $tax_object->labels->singular_name : wc_attribute_label($taxonomy);
+                } else {
+                    unset($attribute_terms[$taxonomy]);
+                    unset($attribute_suffixes[$taxonomy]);
+                }
             }
         }
 
         $combinations = SKU_Generator::generate_combinations($attribute_terms);
-        $slug_combinations = SKU_Generator::generate_combinations($attribute_slugs);
+        $suffix_combinations = SKU_Generator::generate_combinations($attribute_suffixes);
 
         // Add data
         $row = 2;
@@ -168,7 +238,17 @@ function export_skus_to_excel($product) {
                 $i++;
             }
             
-            $sku = strtoupper($product->get_sku() . '-' . implode('-', $slug_combinations[$index]));
+            // Find the matching variation
+            $variation_sku = '';
+            foreach ($variation_data as $variation) {
+                if (match_variation_to_combination($variation, $combination, $attribute_terms) && !empty($variation['sku'])) {
+                    $variation_sku = $variation['sku'];
+                    break;
+                }
+            }
+            
+            // Use variation SKU if available, otherwise use base SKU with suffixes
+            $sku = $variation_sku ?: strtoupper($product->get_sku() . '-' . implode('-', $suffix_combinations[$index]));
             
             $sheet->setCellValue('A' . $row, implode(' | ', $readable_combination));
             $sheet->setCellValue('B' . $row, $sku);
