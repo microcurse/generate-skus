@@ -2,7 +2,7 @@
 /*
 Plugin Name: SKU Generator for WooCommerce Variations
 Description: Generate SKUs for WooCommerce Product variations with Excel export functionality
-Version: 1.0.0
+Version: 1.0.1
 Author: Marc Maninang
 License: GPL2
 Text Domain: sku-generator
