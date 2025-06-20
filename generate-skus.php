@@ -2,7 +2,7 @@
 /*
 Plugin Name: SKU Generator for WooCommerce Variations
 Description: Generate SKUs for WooCommerce Product variations with Excel export functionality
-Version: 1.0.2
+Version: 1.1.0
 Author: Marc Maninang
 License: GPL2
 Text Domain: sku-generator
@@ -38,7 +38,6 @@ define('SKU_GENERATOR_MIN_WC_VERSION', '7.0');
 
 // Include required files
 require_once SKU_GENERATOR_PATH . 'includes/class-sku-generator.php';
-require_once SKU_GENERATOR_PATH . 'admin/sku-generator-page.php';
 
 // Initialize the plugin
 add_action('plugins_loaded', 'initialize_sku_generator_plugin');
@@ -58,18 +57,4 @@ function initialize_sku_generator_plugin() {
 
     // Initialize main class
     SKU_Generator::get_instance();
-}
-
-// Register custom admin page for SKU listing
-add_action('admin_menu', 'sku_generator_register_page');
-
-function sku_generator_register_page() {
-    add_submenu_page(
-        null,
-        'SKU Generator',
-        'SKU Generator',
-        'manage_options',
-        'generate_sku_list',
-        'sku_generator_page_callback'
-    );
 }
