@@ -15,30 +15,29 @@ class SKU_Generator {
 
     private function __construct() {
         add_action('add_meta_boxes', array($this, 'add_meta_box'));
-        add_action('admin_init', array($this, 'handle_sku_generation_request'));
+        add_action('admin_menu', array($this, 'register_sku_generator_page'));
     }
 
-    /**
-     * Handle the SKU generation request from the product meta box.
-     */
-    public function handle_sku_generation_request() {
-        if (
-            isset($_POST['generate_sku_list_action']) &&
-            isset($_POST['product_id']) &&
-            check_admin_referer('generate_sku_list_nonce')
-        ) {
-            $this->render_sku_page();
-            exit;
-        }
+    public function register_sku_generator_page() {
+        add_submenu_page(
+            null,
+            'SKU Generator',
+            'SKU Generator',
+            'manage_options',
+            'sku-generator',
+            array($this, 'render_sku_generator_page')
+        );
+    }
 
-        if (isset($_POST['export_excel']) && check_admin_referer('export_skus')) {
-            $product_id = isset($_POST['product_id']) ? intval($_POST['product_id']) : 0;
-            if ($product_id) {
-                $product = wc_get_product($product_id);
-                if ($product) {
-                    $this->export_skus_to_excel($product);
-                    exit;
-                }
+    public function render_sku_generator_page() {
+        if (isset($_GET['product_id']) && isset($_GET['_wpnonce']) && wp_verify_nonce($_GET['_wpnonce'], 'generate_sku_list_nonce_' . $_GET['product_id'])) {
+            $this->render_sku_generator_page_content();
+        } elseif (isset($_POST['export_excel']) && isset($_POST['product_id']) && check_admin_referer('export_skus')) {
+            $product_id = intval($_POST['product_id']);
+            $product = wc_get_product($product_id);
+            if ($product) {
+                $this->export_skus_to_excel($product);
+                exit;
             }
         }
     }
@@ -69,14 +68,14 @@ class SKU_Generator {
     }
 
     /**
-     * Render the SKU combinations page.
+     * Render the SKU combinations page content.
      */
-    public function render_sku_page() {
-        if (!isset($_POST['product_id'])) {
+    public function render_sku_generator_page_content() {
+        if (!isset($_GET['product_id'])) {
             wp_die('Product ID missing.');
         }
     
-        $product_id = intval($_POST['product_id']);
+        $product_id = intval($_GET['product_id']);
         $product = wc_get_product($product_id);
     
         if (!$product || !$product->is_type('variable')) {
@@ -368,19 +367,15 @@ class SKU_Generator {
         ?>
         <div class="sku-generator-box">
             <p>Generate a reference table of all possible SKU combinations based on the product's attributes used as variation. This applies the slug to the SKU.</p>
-            <form id="sku_generator_form" method="post" action="" target="_blank">
-                <?php wp_nonce_field('generate_sku_list_nonce'); ?>
-                <input type="hidden" name="generate_sku_list_action" value="1" />
-                <input type="hidden" name="product_id" value="<?php echo esc_attr($post->ID); ?>" />
-                <button type="submit" class="button button-primary" style="width: 100%; text-align: center; margin-top: 5px;">
-                    Generate SKU Combinations
-                </button>
-            </form>
-            <script>
-                document.getElementById('sku_generator_form').addEventListener('submit', function(e) {
-                    this.target = '_blank';
-                });
-            </script>
+            
+            <?php
+            $nonce = wp_create_nonce('generate_sku_list_nonce_' . $post->ID);
+            $link = admin_url('admin.php?page=sku-generator&product_id=' . $post->ID . '&_wpnonce=' . $nonce);
+            ?>
+            <a href="<?php echo esc_url($link); ?>" target="_blank" class="button button-primary" style="width: 100%; text-align: center; margin-top: 5px;">
+                Generate SKU Combinations
+            </a>
+
         </div>
         <?php
     }
